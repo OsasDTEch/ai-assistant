@@ -18,7 +18,7 @@ with st.form("upload-form"):
     submitted = st.form_submit_button("Upload")
     if submitted and file:
         res = requests.post(
-            "http://localhost:8000/upload",
+            "https://ai-assistant-37ym.onrender.com/upload",
             files={"file": (file.name, file, file.type)},
             data={"user_id": user_id}
         )
@@ -30,7 +30,7 @@ with st.form("upload-form"):
 # Ask question
 question = st.text_input("Ask something from the doc:")
 if question:
-    res = requests.post("http://localhost:8000/ask", data={
+    res = requests.post("https://ai-assistant-37ym.onrender.com/ask", data={
         "question": question,
         "user_id": user_id
     })
