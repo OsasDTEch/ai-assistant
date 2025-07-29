@@ -7,3 +7,4 @@ chromadb
 PyMuPDF
 uvicorn
 fastapi
+streamlit
