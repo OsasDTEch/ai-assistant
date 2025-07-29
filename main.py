@@ -8,9 +8,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
-load_dotenv()
-
 import os
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -21,7 +21,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-GROQ_APIKEY= os.getenv('GROQ_APIKEY')
+
+GROQ_APIKEY = os.getenv('GROQ_APIKEY')
+
 llm = ChatGroq(
     model="mixtral-8x7b",
     temperature=0.4,
@@ -31,7 +33,7 @@ llm = ChatGroq(
 )
 
 @app.post("/upload")
-async def upload_file(file: UploadFile, user_id: str = Form(...)):
+async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
     if file.content_type != "application/pdf":
         return JSONResponse(content={"error": "Only PDF files are supported."}, status_code=400)
 
@@ -76,3 +78,8 @@ async def ask(question: str = Form(...), user_id: str = Form(...)):
     )
     result = qa.run(question)
     return JSONResponse(content={"answer": result})
+
+# Run with: python app.py
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
