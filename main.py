@@ -31,35 +31,47 @@ llm = ChatGroq(
     max_retries=2,
     api_key=GROQ_APIKEY
 )
-
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
-    if file.content_type != "application/pdf":
-        return JSONResponse(content={"error": "Only PDF files are supported."}, status_code=400)
+    try:
+        if file.content_type != "application/pdf":
+            return JSONResponse(content={"error": "Only PDF files are supported."}, status_code=400)
 
-    contents = await file.read()
-    pdf_path = f"temp_{user_id}.pdf"
-    with open(pdf_path, "wb") as f:
-        f.write(contents)
+        contents = await file.read()
+        pdf_path = f"temp_{user_id}.pdf"
+        with open(pdf_path, "wb") as f:
+            f.write(contents)
 
-    loader = PyMuPDFLoader(pdf_path)
-    pages = loader.load()
+        # Check file actually saved
+        if not os.path.exists(pdf_path):
+            return JSONResponse(content={"error": "PDF file could not be saved."}, status_code=500)
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    docs = splitter.split_documents(pages)
+        try:
+            loader = PyMuPDFLoader(pdf_path)
+            pages = loader.load()
+        except Exception as e:
+            return JSONResponse(content={"error": f"Failed to load PDF: {str(e)}"}, status_code=500)
 
-    vectorstore_dir = f"chroma_db/{user_id}"
-    os.makedirs(vectorstore_dir, exist_ok=True)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        docs = splitter.split_documents(pages)
 
-    db = Chroma.from_documents(
-        docs,
-        embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
-        persist_directory=vectorstore_dir
-    )
-    db.persist()
-    os.remove(pdf_path)
+        vectorstore_dir = f"chroma_db/{user_id}"
+        os.makedirs(vectorstore_dir, exist_ok=True)
 
-    return JSONResponse(content={"status": "success"})
+        db = Chroma.from_documents(
+            docs,
+            embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
+            persist_directory=vectorstore_dir
+        )
+        db.persist()
+
+        os.remove(pdf_path)
+
+        return JSONResponse(content={"status": "success"})
+
+    except Exception as e:
+        return JSONResponse(content={"error": f"Unexpected error: {str(e)}"}, status_code=500)
+
 
 @app.post("/ask")
 async def ask(question: str = Form(...), user_id: str = Form(...)):
