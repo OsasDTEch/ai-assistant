@@ -3,7 +3,8 @@ import streamlit as st
 import requests
 import uuid
 
-st.title("📄 Chat with Your Document")
+st.title("📄 Chat with Your Document:")
+st.write('IntelDocs')
 
 # Generate unique user_id per session
 if "user_id" not in st.session_state:
