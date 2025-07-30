@@ -21,10 +21,12 @@ with st.form("upload-form"):
             "https://ai-assistant-37ym.onrender.com/upload",
             files={"file": (file.name, file, file.type)},
             data={"user_id": user_id}
+            print{user_id}
         )
         if res.status_code == 200:
             st.success("✅ File uploaded and processed!")
         else:
+            st.error(res.status_code)
             st.error("❌ Failed to upload/process file.")
 
 # Ask question
