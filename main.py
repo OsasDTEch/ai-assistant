@@ -28,7 +28,7 @@ app.add_middleware(
 # Load Groq LLM
 GROQ_APIKEY = os.getenv("GROQ_APIKEY")
 llm = ChatGroq(
-    model="mixtral-8x7b",
+    model="gemma-2b-it",
     temperature=0.4,
     reasoning_format="parsed",
     max_retries=2,
@@ -37,7 +37,7 @@ llm = ChatGroq(
 
 # Smaller embedding model
 embedding_model = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/paraphrase-MiniLM-L3-v2"
+    model_name="intfloat/e5-small"
 )
 
 @app.post("/upload")
