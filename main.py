@@ -104,3 +104,10 @@ async def ask(question: str = Form(...), user_id: str = Form(...)):
 
     except Exception as e:
         return JSONResponse(content={"error": f"Failed to process question: {str(e)}"}, status_code=500)
+
+
+# Add this at the bottom of your main.py (or wherever your FastAPI app is defined)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))  # Default to 8000 if PORT not set
+    uvicorn.run(app, host="0.0.0.0", port=port)
