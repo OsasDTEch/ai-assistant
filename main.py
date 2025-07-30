@@ -9,21 +9,33 @@ from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 import os
+import logging
 
-# Load environment variables
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load env
 load_dotenv()
 GROQ_APIKEY = os.getenv('GROQ_APIKEY')
+if not GROQ_APIKEY:
+    logger.error("❌ GROQ_APIKEY not set in environment.")
+    raise ValueError("Missing GROQ_APIKEY in .env")
 
-# Setup FastAPI app
+# Initialize FastAPI
 app = FastAPI()
-# Add to your FastAPI app startup
+
+# Warm-up embedding model
 @app.on_event("startup")
 async def startup_event():
-    # Warm up the model
-    dummy_text = "warmup"
-    HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2").embed_query(dummy_text)
+    try:
+        logger.info("⚡ Warming up HuggingFace embeddings...")
+        HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2").embed_query("warmup")
+        logger.info("✅ Embeddings ready.")
+    except Exception as e:
+        logger.error(f"❌ Failed to warm up embeddings: {str(e)}")
 
-# Enable CORS for all origins
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -41,48 +53,41 @@ llm = ChatGroq(
     api_key=GROQ_APIKEY
 )
 
-# Ensure uploads directory exists
+# Directories
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Upload PDF and process
 @app.post("/upload")
-async def upload_file(file: UploadFile, user_id: str = Form(...)):
+async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
     if file.content_type != "application/pdf":
         return JSONResponse(content={"error": "Only PDF files are supported."}, status_code=400)
 
-    # Save to uploads/
     pdf_path = os.path.join(UPLOAD_DIR, f"{user_id}.pdf")
     try:
         contents = await file.read()
         with open(pdf_path, "wb") as f:
             f.write(contents)
 
-        # Load and split PDF
+        # Load and split
         loader = PyMuPDFLoader(pdf_path)
         pages = loader.load()
-
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         docs = splitter.split_documents(pages)
 
-        # Save vector store in chroma_db/user_id
         vectorstore_dir = f"chroma_db/{user_id}"
         os.makedirs(vectorstore_dir, exist_ok=True)
 
-        db = Chroma.from_documents(
-            docs,
-            embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
-            persist_directory=vectorstore_dir
-        )
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        db = Chroma.from_documents(docs, embedding=embeddings, persist_directory=vectorstore_dir)
         db.persist()
-        os.remove(pdf_path)
 
+        os.remove(pdf_path)
         return JSONResponse(content={"status": "success"})
 
     except Exception as e:
+        logger.error(f"Upload failed: {str(e)}")
         return JSONResponse(content={"error": f"Failed to process file: {str(e)}"}, status_code=500)
 
-# Ask question endpoint
 @app.post("/ask")
 async def ask(question: str = Form(...), user_id: str = Form(...)):
     vectorstore_dir = f"chroma_db/{user_id}"
@@ -90,24 +95,17 @@ async def ask(question: str = Form(...), user_id: str = Form(...)):
         return JSONResponse(content={"answer": "No document uploaded yet."})
 
     try:
-        db = Chroma(
-            persist_directory=vectorstore_dir,
-            embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        )
-
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            retriever=db.as_retriever()
-        )
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        db = Chroma(persist_directory=vectorstore_dir, embedding_function=embeddings)
+        qa = RetrievalQA.from_chain_type(llm=llm, retriever=db.as_retriever())
         result = qa.run(question)
         return JSONResponse(content={"answer": result})
 
     except Exception as e:
+        logger.error(f"Question handling failed: {str(e)}")
         return JSONResponse(content={"error": f"Failed to process question: {str(e)}"}, status_code=500)
 
-
-# Add this at the bottom of your main.py (or wherever your FastAPI app is defined)
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))  # Default to 8000 if PORT not set
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
