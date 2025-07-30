@@ -16,6 +16,12 @@ GROQ_APIKEY = os.getenv('GROQ_APIKEY')
 
 # Setup FastAPI app
 app = FastAPI()
+# Add to your FastAPI app startup
+@app.on_event("startup")
+async def startup_event():
+    # Warm up the model
+    dummy_text = "warmup"
+    HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2").embed_query(dummy_text)
 
 # Enable CORS for all origins
 app.add_middleware(
