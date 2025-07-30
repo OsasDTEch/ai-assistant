@@ -10,10 +10,10 @@ import os
 def process_and_store(file_path:str , user_id:str):
     loader= PyPDFLoader(file_path)
     documents =loader.load()
-    splitter= RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    splitter= RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
     chunks= splitter.split_documents(documents)
 
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name="paraphrase-MiniLM-L3-v2")
     vectorstore= Chroma(
         collection_name=user_id,
         persist_directory='./chroma_db',
