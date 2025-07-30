@@ -10,16 +10,10 @@ from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 import os
 
-# Load .env variables
 load_dotenv()
-
-# Create chroma_db directory if it doesn't exist
-if not os.path.exists("chroma_db"):
-    os.makedirs("chroma_db")
 
 app = FastAPI()
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,8 +22,9 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Load Groq LLM
 GROQ_APIKEY = os.getenv('GROQ_APIKEY')
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # Base directory
+CHROMA_DB_DIR = os.path.join(BASE_DIR, "chroma_db")    # Absolute path to chroma_db
 
 llm = ChatGroq(
     model="mixtral-8x7b",
@@ -39,54 +34,49 @@ llm = ChatGroq(
     api_key=GROQ_APIKEY
 )
 
-# Upload and index PDF
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
     if file.content_type != "application/pdf":
         return JSONResponse(content={"error": "Only PDF files are supported."}, status_code=400)
 
-    try:
-        # Save uploaded file
-        contents = await file.read()
-        pdf_path = f"temp_{user_id}.pdf"
-        with open(pdf_path, "wb") as f:
-            f.write(contents)
+    contents = await file.read()
+    pdf_path = os.path.join(BASE_DIR, f"temp_{user_id}.pdf")
+    with open(pdf_path, "wb") as f:
+        f.write(contents)
 
-        # Load and split PDF
+    try:
         loader = PyMuPDFLoader(pdf_path)
         pages = loader.load()
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         docs = splitter.split_documents(pages)
 
-        # Create user-specific vector store
-        vectorstore_dir = f"chroma_db/{user_id}"
-        os.makedirs(vectorstore_dir, exist_ok=True)
+        user_vectorstore_dir = os.path.join(CHROMA_DB_DIR, user_id)
+        os.makedirs(user_vectorstore_dir, exist_ok=True)
 
         db = Chroma.from_documents(
             docs,
             embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
-            persist_directory=vectorstore_dir
+            persist_directory=user_vectorstore_dir
         )
         db.persist()
-
-        os.remove(pdf_path)
-
-        return JSONResponse(content={"status": "success"})
-
     except Exception as e:
-        return JSONResponse(content={"error": f"Failed to process file: {str(e)}"}, status_code=500)
+        return JSONResponse(content={"error": f"Processing failed: {str(e)}"}, status_code=500)
+    finally:
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
 
-# Ask questions using LLM
+    return JSONResponse(content={"status": "success"})
+
 @app.post("/ask")
 async def ask(question: str = Form(...), user_id: str = Form(...)):
-    vectorstore_dir = f"chroma_db/{user_id}"
-    if not os.path.exists(vectorstore_dir):
+    user_vectorstore_dir = os.path.join(CHROMA_DB_DIR, user_id)
+    if not os.path.exists(user_vectorstore_dir):
         return JSONResponse(content={"answer": "No document uploaded yet."})
 
     try:
         db = Chroma(
-            persist_directory=vectorstore_dir,
+            persist_directory=user_vectorstore_dir,
             embedding_function=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         )
 
@@ -96,11 +86,10 @@ async def ask(question: str = Form(...), user_id: str = Form(...)):
         )
         result = qa.run(question)
         return JSONResponse(content={"answer": result})
-
     except Exception as e:
-        return JSONResponse(content={"error": f"Failed to answer question: {str(e)}"}, status_code=500)
+        return JSONResponse(content={"error": f"QA failed: {str(e)}"}, status_code=500)
 
-# Run for local testing (ignored by Render)
+# Run with: python app.py
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
